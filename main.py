@@ -316,7 +316,7 @@ class YuanRedeemPlugin(Star):
         existing = self.store.get_binding(scope_key)
         if existing:
             return event.plain_result(
-                f"你已绑定 player_id={existing.player_id}，player_name={existing.player_name}。如需修改，请先发送“解绑代号鸢”。"
+                f"你已绑定 角色ID={existing.player_id}，角色名={existing.player_name}。如需修改，请先发送“解绑代号鸢”。"
             )
 
         holder: dict[str, str] = {}
@@ -324,7 +324,7 @@ class YuanRedeemPlugin(Star):
         try:
             await event.send(
                 event.plain_result(
-                    "开始绑定代号鸢账号，请先发送 player_id。\n发送“取消”可终止本次绑定。"
+                    "开始绑定代号鸢账号，请先发送角色ID。\n发送“取消”可终止本次绑定。"
                 )
             )
 
@@ -339,14 +339,14 @@ class YuanRedeemPlugin(Star):
                 if "player_id" not in holder:
                     if not PLAYER_ID_PATTERN.fullmatch(message):
                         await session_event.send(
-                            session_event.plain_result("player_id 需为 1-32 位数字，请重新输入。")
+                            session_event.plain_result("角色ID 需为 1-32 位数字，请重新输入。")
                         )
                         controller.keep(timeout=120, reset_timeout=True)
                         return
                     holder["player_id"] = message
                     await session_event.send(
                         session_event.plain_result(
-                            "已记录 player_id，请发送 player_name。\n发送“取消”可终止本次绑定。"
+                            "已记录角色ID，请发送角色名。\n发送“取消”可终止本次绑定。"
                         )
                     )
                     controller.keep(timeout=120, reset_timeout=True)
@@ -354,7 +354,7 @@ class YuanRedeemPlugin(Star):
 
                 if not message or len(message) > 32:
                     await session_event.send(
-                        session_event.plain_result("player_name 不能为空，且长度不能超过 32 个字符，请重新输入。")
+                        session_event.plain_result("角色名不能为空，且长度不能超过 32 个字符，请重新输入。")
                     )
                     controller.keep(timeout=120, reset_timeout=True)
                     return
@@ -369,7 +369,7 @@ class YuanRedeemPlugin(Star):
                 )
                 await session_event.send(
                     session_event.plain_result(
-                        f"绑定成功：player_id={holder['player_id']}，player_name={holder['player_name']}。"
+                        f"绑定成功：角色ID={holder['player_id']}，角色名={holder['player_name']}。"
                     )
                 )
                 controller.stop()
@@ -393,7 +393,7 @@ class YuanRedeemPlugin(Star):
         if binding is None:
             return event.plain_result("你当前还没有绑定代号鸢账号。")
         return event.plain_result(
-            f"当前绑定信息：player_id={binding.player_id}，player_name={binding.player_name}。"
+            f"当前绑定信息：角色ID={binding.player_id}，角色名={binding.player_name}。"
         )
 
     async def _handle_redeem(self, event: AstrMessageEvent):
@@ -413,7 +413,7 @@ class YuanRedeemPlugin(Star):
 
         lines = [
             f"开始兑换，共有 {len(pending_codes)} 个新兑换码待处理。",
-            f"绑定账号：{binding.player_name} ({binding.player_id})",
+            f"绑定账号：角色名={binding.player_name}，角色ID={binding.player_id}",
         ]
         for code in pending_codes:
             attempt = await self._redeem_code(binding.player_id, binding.player_name, code)
