@@ -256,7 +256,7 @@ class YuanRedeemPlugin(Star):
             return
 
     @filter.permission_type(filter.PermissionType.ADMIN)
-    @filter.event_message_type(filter.EventMessageType.ALL)
+    @filter.event_message_type(filter.EventMessageType.PRIVATE_MESSAGE)
     async def handle_admin_commands(self, event: AstrMessageEvent):
         text = self._normalized_text(event)
         if not text:
