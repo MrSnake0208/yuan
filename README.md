@@ -1,14 +1,60 @@
-# astrbot-plugin-helloworld
+# astrbot-plugin-yuan-redeem
 
-AstrBot 插件模板 / A template plugin for AstrBot plugin feature
+一个用于 AstrBot 的代号鸢兑换插件。
 
-> [!NOTE]
-> This repo is just a template of [AstrBot](https://github.com/AstrBotDevs/AstrBot) Plugin.
-> 
-> [AstrBot](https://github.com/AstrBotDevs/AstrBot) is an agentic assistant for both personal and group conversations. It can be deployed across dozens of mainstream instant messaging platforms, including QQ, Telegram, Feishu, DingTalk, Slack, LINE, Discord, Matrix, etc. In addition, it provides a reliable and extensible conversational AI infrastructure for individuals, developers, and teams. Whether you need a personal AI companion, an intelligent customer support agent, an automation assistant, or an enterprise knowledge base, AstrBot enables you to quickly build AI applications directly within your existing messaging workflows.
+## 功能
 
-# Supports
+- 用户私聊机器人后，可通过分步对话绑定自己的 `player_id` 和 `player_name`
+- 每个用户与机器人的绑定信息独立保存，互不干扰
+- 管理员可维护全局兑换码队列
+- 用户发送 `代号鸢兑换` 后，机器人会按顺序帮其兑换所有尚未处理过的全局兑换码
+- 插件会记录每个用户对每个兑换码的处理结果，避免重复请求
 
-- [AstrBot Repo](https://github.com/AstrBotDevs/AstrBot)
-- [AstrBot Plugin Development Docs (Chinese)](https://docs.astrbot.app/dev/star/plugin-new.html)
-- [AstrBot Plugin Development Docs (English)](https://docs.astrbot.app/en/dev/star/plugin-new.html)
+## 用户指令
+
+以下指令建议在**私聊**中使用：
+
+- `绑定代号鸢`：启动绑定流程
+- `解绑代号鸢`：解绑当前账号
+- `代号鸢绑定状态`：查看当前绑定信息
+- `代号鸢兑换`：兑换所有尚未处理过的全局兑换码
+
+绑定流程中发送 `取消` 或 `退出` 可终止本次绑定。
+
+## 管理员指令
+
+- `添加代号鸢兑换码 <code...>`：添加一个或多个全局兑换码，支持空格、逗号分隔
+- `新增代号鸢兑换码 <code...>`：同上
+- `删除代号鸢兑换码 <code>`：删除指定兑换码
+- `查看代号鸢兑换码`：查看当前全局兑换码列表
+- `清空代号鸢兑换码`：清空当前全部全局兑换码
+
+管理员权限通过 AstrBot 的 `ADMIN` 权限过滤器判定。
+
+## 存储说明
+
+插件会在同目录生成 `yuan_redeem.sqlite3`，用于保存：
+
+- 用户绑定信息
+- 全局兑换码
+- 每个用户的兑换记录
+
+## 兑换接口
+
+插件会向以下接口发送 `POST` 请求：
+
+- `https://p11132-game-adapter.qookkagames.com/cms/active_code/change`
+
+请求体示例：
+
+```json
+{
+  "player_name": "玩家名",
+  "player_id": "123456",
+  "code": "ACTIVECODE"
+}
+```
+
+## 开发说明
+
+当前仓库是基于 AstrBot 插件模板改造的单文件实现，主逻辑位于 `main.py`。
