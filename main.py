@@ -19,6 +19,7 @@ REDEEM_ENDPOINT = "https://p11132-game-adapter.qookkagames.com/cms/active_code/c
 HTTP_TIMEOUT_SECONDS = 15
 CODE_SPLIT_PATTERN = re.compile(r"[\s,，;；]+")
 PLAYER_ID_PATTERN = re.compile(r"\d{1,32}")
+ADMIN_COMMAND_PREFIX = "/"
 
 
 @dataclass(slots=True)
@@ -261,6 +262,10 @@ class YuanRedeemPlugin(Star):
         if not text:
             return
 
+        text = self._strip_admin_command_prefix(text)
+        if not text:
+            return
+
         sender_label = self._get_sender_name(event)
 
         if text.startswith("添加代号鸢兑换码") or text.startswith("新增代号鸢兑换码"):
@@ -270,7 +275,10 @@ class YuanRedeemPlugin(Star):
                 yield event.plain_result(
                     self._format_message(
                         "兑换码管理",
-                        ["还没收到兑换码内容。", "可以这样发送：添加代号鸢兑换码 CODE123"],
+                        [
+                            "还没收到兑换码内容。",
+                            f"可以这样发送：{ADMIN_COMMAND_PREFIX}添加代号鸢兑换码 CODE123",
+                        ],
                     )
                 )
             else:
@@ -291,7 +299,10 @@ class YuanRedeemPlugin(Star):
                 yield event.plain_result(
                     self._format_message(
                         "兑换码管理",
-                        ["还没指定要删除的兑换码。", "可以这样发送：删除代号鸢兑换码 CODE123"],
+                        [
+                            "还没指定要删除的兑换码。",
+                            f"可以这样发送：{ADMIN_COMMAND_PREFIX}删除代号鸢兑换码 CODE123",
+                        ],
                     )
                 )
             elif self.store.delete_code(code):
@@ -583,6 +594,12 @@ class YuanRedeemPlugin(Star):
     @staticmethod
     def _normalized_text(event: AstrMessageEvent) -> str:
         return (getattr(event, "message_str", "") or "").strip()
+
+    @staticmethod
+    def _strip_admin_command_prefix(text: str) -> str:
+        if not text.startswith(ADMIN_COMMAND_PREFIX):
+            return ""
+        return text[len(ADMIN_COMMAND_PREFIX) :].strip()
 
     @staticmethod
     def _split_command_payload(text: str) -> str:
