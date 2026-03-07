@@ -20,6 +20,10 @@ HTTP_TIMEOUT_SECONDS = 15
 CODE_SPLIT_PATTERN = re.compile(r"[\s,，;；]+")
 PLAYER_ID_PATTERN = re.compile(r"\d{1,32}")
 ADMIN_COMMAND_PREFIX = "/"
+SUCCESS_STATUS_VALUES = {0, 200, "0", "200", True, "success", "ok", "SUCCESS", "OK"}
+TERMINAL_REDEEM_STATUSES = {"success", "failed_final", "unknown_pending", "error"}
+SUCCESS_MESSAGE_RULES: tuple[str, ...] = ()
+FINAL_FAILURE_MESSAGE_RULES: tuple[str, ...] = ()
 
 
 @dataclass(slots=True)
@@ -178,10 +182,10 @@ class RedeemStore:
     def list_processed_codes(self, scope_key: str) -> set[str]:
         with self._connect() as conn:
             rows = conn.execute(
-                "SELECT code FROM redeem_records WHERE scope_key = ?",
+                "SELECT code, status FROM redeem_records WHERE scope_key = ?",
                 (scope_key,),
             ).fetchall()
-        return {row[0] for row in rows}
+        return {row[0] for row in rows if should_skip_code_for_auto_redeem(str(row[1]))}
 
     def save_redeem_record(
         self,
@@ -494,8 +498,7 @@ class YuanRedeemPlugin(Star):
         for code in pending_codes:
             attempt = await self._redeem_code(binding.player_id, binding.player_name, code)
             self.store.save_redeem_record(scope_key, self._get_sender_id(event), attempt)
-            status_text = "兑换成功" if attempt.status == "success" else "兑换失败"
-            status_icon = "✅" if attempt.status == "success" else "❌"
+            status_icon, status_text = self._render_attempt_status(attempt.status)
             lines.append(f"{status_icon} {code}：{status_text}，{attempt.message}")
 
         return event.plain_result(self._format_message("兑换结果", lines, bullet=False))
@@ -539,8 +542,8 @@ class YuanRedeemPlugin(Star):
             logger.exception("兑换请求失败 code=%s", code)
             return RedeemAttempt(
                 code=code,
-                status="error",
-                message=f"请求异常：{exc}",
+                status="retryable_error",
+                message=f"请求异常，可稍后重试：{exc}",
                 raw_response=str(exc),
             )
 
@@ -551,21 +554,49 @@ class YuanRedeemPlugin(Star):
         except json.JSONDecodeError:
             if raw_text.strip():
                 message = raw_text.strip()[:120]
-            return ("success" if status_code and 200 <= status_code < 300 else "error", message)
+            return self._classify_redeem_result(status_code, None, message)
 
         normalized_message = self._extract_message(payload) or message
         status_value = self._extract_status_value(payload)
+        return self._classify_redeem_result(status_code, status_value, normalized_message)
 
-        if status_value in {0, 200, "0", "200", True, "success", "ok", "SUCCESS", "OK"}:
+    def _classify_redeem_result(
+        self,
+        status_code: int | None,
+        status_value: Any,
+        message: str,
+    ) -> tuple[str, str]:
+        normalized_message = message.strip() or (f"HTTP {status_code}" if status_code is not None else "接口未返回状态码")
+
+        if status_value in SUCCESS_STATUS_VALUES:
             return "success", normalized_message
 
-        if isinstance(normalized_message, str) and any(keyword in normalized_message for keyword in ("成功", "success", "Success")):
+        if self._message_matches_rule(normalized_message, SUCCESS_MESSAGE_RULES):
             return "success", normalized_message
 
-        if status_code and 200 <= status_code < 300 and status_value is None:
-            return "success", normalized_message
+        if self._message_matches_rule(normalized_message, FINAL_FAILURE_MESSAGE_RULES):
+            return "failed_final", normalized_message
 
-        return "error", normalized_message
+        if status_code == 429 or (status_code is not None and status_code >= 500):
+            return "retryable_error", f"{normalized_message}（服务异常，可稍后重试）"
+
+        return "unknown_pending", f"{normalized_message}（结果未识别，已冻结，待补充规则后再处理）"
+
+    @staticmethod
+    def _message_matches_rule(message: str, rules: Iterable[str]) -> bool:
+        normalized_message = message.casefold()
+        return any(rule and rule.casefold() in normalized_message for rule in rules)
+
+    @staticmethod
+    def _render_attempt_status(status: str) -> tuple[str, str]:
+        mapping = {
+            "success": ("✅", "兑换成功"),
+            "failed_final": ("❌", "兑换失败"),
+            "unknown_pending": ("⏸️", "结果待确认"),
+            "retryable_error": ("🔁", "请求异常"),
+            "error": ("⏸️", "结果待确认"),
+        }
+        return mapping.get(status, ("⏸️", "结果待确认"))
 
     @staticmethod
     def _extract_status_value(payload: Any) -> Any:
@@ -626,7 +657,6 @@ class YuanRedeemPlugin(Star):
         prefix = "• " if bullet else ""
         body = [f"{prefix}{line}" for line in rendered_lines]
         return "\n".join([f"【{title}】", *body])
-
     @staticmethod
     def _get_scope_key(event: AstrMessageEvent) -> str:
         for attr in ("unified_msg_origin",):
@@ -677,3 +707,7 @@ class YuanRedeemPlugin(Star):
                 return str(value)
 
         return "unknown_user"
+
+
+def should_skip_code_for_auto_redeem(status: str) -> bool:
+    return status in TERMINAL_REDEEM_STATUSES
