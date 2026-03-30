@@ -231,40 +231,63 @@ class YuanRedeemPlugin(Star):
         logger.info("代号鸢兑换插件已初始化")
 
     @filter.command("绑定代号鸢")
-    @filter.event_message_type(filter.EventMessageType.PRIVATE_MESSAGE)
     async def bind_account(self, event: AstrMessageEvent):
         """绑定代号鸢账号。"""
+        private_guard = self._ensure_private_chat(event)
+        if private_guard is not None:
+            yield private_guard
+            event.stop_event()
+            return
         result = await self._start_bind_flow(event)
         if result is not None:
             yield result
         event.stop_event()
 
     @filter.command("解绑代号鸢")
-    @filter.event_message_type(filter.EventMessageType.PRIVATE_MESSAGE)
     async def unbind_account(self, event: AstrMessageEvent):
         """解绑当前代号鸢账号。"""
+        private_guard = self._ensure_private_chat(event)
+        if private_guard is not None:
+            yield private_guard
+            event.stop_event()
+            return
         yield self._handle_unbind(event)
         event.stop_event()
 
     @filter.command("代号鸢绑定状态", alias={"查询代号鸢绑定", "查看代号鸢绑定"})
-    @filter.event_message_type(filter.EventMessageType.PRIVATE_MESSAGE)
     async def binding_status(self, event: AstrMessageEvent):
         """查看当前代号鸢绑定信息。"""
+        private_guard = self._ensure_private_chat(event)
+        if private_guard is not None:
+            yield private_guard
+            event.stop_event()
+            return
         yield self._handle_binding_status(event)
         event.stop_event()
 
     @filter.command("代号鸢兑换")
-    @filter.event_message_type(filter.EventMessageType.PRIVATE_MESSAGE)
     async def redeem_codes(self, event: AstrMessageEvent):
         """兑换尚未处理的代号鸢全局兑换码。"""
+        private_guard = self._ensure_private_chat(event)
+        if private_guard is not None:
+            yield private_guard
+            event.stop_event()
+            return
         yield await self._handle_redeem(event)
         event.stop_event()
 
     @filter.command("添加代号鸢兑换码", alias={"新增代号鸢兑换码"})
-    @filter.permission_type(filter.PermissionType.ADMIN)
-    @filter.event_message_type(filter.EventMessageType.PRIVATE_MESSAGE)
     async def add_codes_command(self, event: AstrMessageEvent):
         """添加一个或多个代号鸢全局兑换码。"""
+        private_guard = self._ensure_private_chat(event)
+        if private_guard is not None:
+            yield private_guard
+            event.stop_event()
+            return
+        if not self._is_admin(event):
+            yield event.plain_result(self._format_message("权限不足", ["只有管理员可以管理代号鸢兑换码。"]))
+            event.stop_event()
+            return
         sender_label = self._get_sender_name(event)
         payload = self._extract_command_payload(event, {"添加代号鸢兑换码", "新增代号鸢兑换码"})
         codes = self._parse_codes(payload)
@@ -289,10 +312,17 @@ class YuanRedeemPlugin(Star):
         event.stop_event()
 
     @filter.command("删除代号鸢兑换码")
-    @filter.permission_type(filter.PermissionType.ADMIN)
-    @filter.event_message_type(filter.EventMessageType.PRIVATE_MESSAGE)
     async def delete_code_command(self, event: AstrMessageEvent):
         """删除指定代号鸢全局兑换码。"""
+        private_guard = self._ensure_private_chat(event)
+        if private_guard is not None:
+            yield private_guard
+            event.stop_event()
+            return
+        if not self._is_admin(event):
+            yield event.plain_result(self._format_message("权限不足", ["只有管理员可以管理代号鸢兑换码。"]))
+            event.stop_event()
+            return
         payload = self._extract_command_payload(event, {"删除代号鸢兑换码"})
         code = payload.strip()
         if not code:
@@ -312,10 +342,17 @@ class YuanRedeemPlugin(Star):
         event.stop_event()
 
     @filter.command("查看代号鸢兑换码", alias={"代号鸢兑换码列表"})
-    @filter.permission_type(filter.PermissionType.ADMIN)
-    @filter.event_message_type(filter.EventMessageType.PRIVATE_MESSAGE)
     async def list_codes_command(self, event: AstrMessageEvent):
         """查看当前代号鸢全局兑换码列表。"""
+        private_guard = self._ensure_private_chat(event)
+        if private_guard is not None:
+            yield private_guard
+            event.stop_event()
+            return
+        if not self._is_admin(event):
+            yield event.plain_result(self._format_message("权限不足", ["只有管理员可以管理代号鸢兑换码。"]))
+            event.stop_event()
+            return
         codes = self.store.list_active_codes()
         if not codes:
             yield event.plain_result(self._format_message("兑换码列表", ["现在还没有可用的全局兑换码。"]))
@@ -326,10 +363,17 @@ class YuanRedeemPlugin(Star):
         event.stop_event()
 
     @filter.command("清空代号鸢兑换码")
-    @filter.permission_type(filter.PermissionType.ADMIN)
-    @filter.event_message_type(filter.EventMessageType.PRIVATE_MESSAGE)
     async def clear_codes_command(self, event: AstrMessageEvent):
         """清空全部代号鸢全局兑换码。"""
+        private_guard = self._ensure_private_chat(event)
+        if private_guard is not None:
+            yield private_guard
+            event.stop_event()
+            return
+        if not self._is_admin(event):
+            yield event.plain_result(self._format_message("权限不足", ["只有管理员可以管理代号鸢兑换码。"]))
+            event.stop_event()
+            return
         count = self.store.clear_codes()
         yield event.plain_result(
             self._format_message("兑换码管理", [f"已清空全局兑换码，本次共删除 {count} 条记录。"])
@@ -626,6 +670,23 @@ class YuanRedeemPlugin(Star):
     @staticmethod
     def _normalized_text(event: AstrMessageEvent) -> str:
         return (getattr(event, "message_str", "") or "").strip()
+
+    @staticmethod
+    def _is_admin(event: AstrMessageEvent) -> bool:
+        checker = getattr(event, "is_admin", None)
+        if callable(checker):
+            return bool(checker())
+        return getattr(event, "role", None) == "admin"
+
+    def _ensure_private_chat(self, event: AstrMessageEvent):
+        checker = getattr(event, "is_private_chat", None)
+        if callable(checker):
+            is_private_chat = bool(checker())
+        else:
+            is_private_chat = getattr(event, "get_platform_name", lambda: "")() == "private"
+        if is_private_chat:
+            return None
+        return event.plain_result(self._format_message("请私聊使用", ["这个指令仅支持在私聊中使用。"]))
 
     def _extract_command_payload(self, event: AstrMessageEvent, command_names: set[str]) -> str:
         text = self._normalized_text(event)
