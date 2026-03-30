@@ -19,7 +19,6 @@ REDEEM_ENDPOINT = "https://p11132-game-adapter.qookkagames.com/cms/active_code/c
 HTTP_TIMEOUT_SECONDS = 15
 CODE_SPLIT_PATTERN = re.compile(r"[\s,，;；]+")
 PLAYER_ID_PATTERN = re.compile(r"\d{1,32}")
-ADMIN_COMMAND_PREFIX = "/"
 SUCCESS_STATUS_VALUES = {0, 200, "0", "200", True, "success", "ok", "SUCCESS", "OK"}
 TERMINAL_REDEEM_STATUSES = {"success", "failed_final", "unknown_pending", "error"}
 SUCCESS_MESSAGE_RULES: tuple[str, ...] = ()
@@ -231,109 +230,111 @@ class YuanRedeemPlugin(Star):
         self.store.initialize()
         logger.info("代号鸢兑换插件已初始化")
 
+    @filter.command("绑定代号鸢")
     @filter.event_message_type(filter.EventMessageType.PRIVATE_MESSAGE)
-    async def handle_private_commands(self, event: AstrMessageEvent):
-        text = self._normalized_text(event)
-        if not text:
-            return
+    async def bind_account(self, event: AstrMessageEvent):
+        """绑定代号鸢账号。"""
+        result = await self._start_bind_flow(event)
+        if result is not None:
+            yield result
+        event.stop_event()
 
-        if text == "绑定代号鸢":
-            result = await self._start_bind_flow(event)
-            if result is not None:
-                yield result
-            event.stop_event()
-            return
+    @filter.command("解绑代号鸢")
+    @filter.event_message_type(filter.EventMessageType.PRIVATE_MESSAGE)
+    async def unbind_account(self, event: AstrMessageEvent):
+        """解绑当前代号鸢账号。"""
+        yield self._handle_unbind(event)
+        event.stop_event()
 
-        if text == "解绑代号鸢":
-            yield self._handle_unbind(event)
-            event.stop_event()
-            return
+    @filter.command("代号鸢绑定状态", alias={"查询代号鸢绑定", "查看代号鸢绑定"})
+    @filter.event_message_type(filter.EventMessageType.PRIVATE_MESSAGE)
+    async def binding_status(self, event: AstrMessageEvent):
+        """查看当前代号鸢绑定信息。"""
+        yield self._handle_binding_status(event)
+        event.stop_event()
 
-        if text in {"代号鸢绑定状态", "查询代号鸢绑定", "查看代号鸢绑定"}:
-            yield self._handle_binding_status(event)
-            event.stop_event()
-            return
+    @filter.command("代号鸢兑换")
+    @filter.event_message_type(filter.EventMessageType.PRIVATE_MESSAGE)
+    async def redeem_codes(self, event: AstrMessageEvent):
+        """兑换尚未处理的代号鸢全局兑换码。"""
+        yield await self._handle_redeem(event)
+        event.stop_event()
 
-        if text == "代号鸢兑换":
-            yield await self._handle_redeem(event)
-            event.stop_event()
-            return
-
+    @filter.command("添加代号鸢兑换码", alias={"新增代号鸢兑换码"})
     @filter.permission_type(filter.PermissionType.ADMIN)
     @filter.event_message_type(filter.EventMessageType.PRIVATE_MESSAGE)
-    async def handle_admin_commands(self, event: AstrMessageEvent):
-        text = self._normalized_text(event)
-        if not text:
-            return
-
-        text = self._strip_admin_command_prefix(text)
-        if not text:
-            return
-
+    async def add_codes_command(self, event: AstrMessageEvent):
+        """添加一个或多个代号鸢全局兑换码。"""
         sender_label = self._get_sender_name(event)
-
-        if text.startswith("添加代号鸢兑换码") or text.startswith("新增代号鸢兑换码"):
-            payload = self._split_command_payload(text)
-            codes = self._parse_codes(payload)
-            if not codes:
-                yield event.plain_result(
-                    self._format_message(
-                        "兑换码管理",
-                        [
-                            "还没收到兑换码内容。",
-                            f"可以这样发送：{ADMIN_COMMAND_PREFIX}添加代号鸢兑换码 CODE123",
-                        ],
-                    )
-                )
-            else:
-                added, duplicated = self.store.add_codes(codes, sender_label)
-                lines = []
-                if added:
-                    lines.append(f"新加入 {len(added)} 个兑换码：{', '.join(added)}")
-                if duplicated:
-                    lines.append(f"这些兑换码之前已经有了，已自动跳过：{', '.join(duplicated)}")
-                yield event.plain_result(self._format_message("兑换码管理", lines))
-            event.stop_event()
-            return
-
-        if text.startswith("删除代号鸢兑换码"):
-            payload = self._split_command_payload(text)
-            code = payload.strip()
-            if not code:
-                yield event.plain_result(
-                    self._format_message(
-                        "兑换码管理",
-                        [
-                            "还没指定要删除的兑换码。",
-                            f"可以这样发送：{ADMIN_COMMAND_PREFIX}删除代号鸢兑换码 CODE123",
-                        ],
-                    )
-                )
-            elif self.store.delete_code(code):
-                yield event.plain_result(self._format_message("兑换码管理", [f"已删除兑换码：{code}"]))
-            else:
-                yield event.plain_result(self._format_message("兑换码管理", [f"没有找到兑换码：{code}"]))
-            event.stop_event()
-            return
-
-        if text in {"查看代号鸢兑换码", "代号鸢兑换码列表"}:
-            codes = self.store.list_active_codes()
-            if not codes:
-                yield event.plain_result(self._format_message("兑换码列表", ["现在还没有可用的全局兑换码。"]))
-            else:
-                lines = [f"当前共有 {len(codes)} 个全局兑换码："]
-                lines.extend(f"{index}. {code}" for index, code in enumerate(codes, start=1))
-                yield event.plain_result(self._format_message("兑换码列表", lines, bullet=False))
-            event.stop_event()
-            return
-
-        if text == "清空代号鸢兑换码":
-            count = self.store.clear_codes()
+        payload = self._extract_command_payload(event, {"添加代号鸢兑换码", "新增代号鸢兑换码"})
+        codes = self._parse_codes(payload)
+        if not codes:
             yield event.plain_result(
-                self._format_message("兑换码管理", [f"已清空全局兑换码，本次共删除 {count} 条记录。"])
+                self._format_message(
+                    "兑换码管理",
+                    [
+                        "还没收到兑换码内容。",
+                        "可以这样发送：#添加代号鸢兑换码 CODE123",
+                    ],
+                )
             )
-            event.stop_event()
-            return
+        else:
+            added, duplicated = self.store.add_codes(codes, sender_label)
+            lines = []
+            if added:
+                lines.append(f"新加入 {len(added)} 个兑换码：{', '.join(added)}")
+            if duplicated:
+                lines.append(f"这些兑换码之前已经有了，已自动跳过：{', '.join(duplicated)}")
+            yield event.plain_result(self._format_message("兑换码管理", lines))
+        event.stop_event()
+
+    @filter.command("删除代号鸢兑换码")
+    @filter.permission_type(filter.PermissionType.ADMIN)
+    @filter.event_message_type(filter.EventMessageType.PRIVATE_MESSAGE)
+    async def delete_code_command(self, event: AstrMessageEvent):
+        """删除指定代号鸢全局兑换码。"""
+        payload = self._extract_command_payload(event, {"删除代号鸢兑换码"})
+        code = payload.strip()
+        if not code:
+            yield event.plain_result(
+                self._format_message(
+                    "兑换码管理",
+                    [
+                        "还没指定要删除的兑换码。",
+                        "可以这样发送：#删除代号鸢兑换码 CODE123",
+                    ],
+                )
+            )
+        elif self.store.delete_code(code):
+            yield event.plain_result(self._format_message("兑换码管理", [f"已删除兑换码：{code}"]))
+        else:
+            yield event.plain_result(self._format_message("兑换码管理", [f"没有找到兑换码：{code}"]))
+        event.stop_event()
+
+    @filter.command("查看代号鸢兑换码", alias={"代号鸢兑换码列表"})
+    @filter.permission_type(filter.PermissionType.ADMIN)
+    @filter.event_message_type(filter.EventMessageType.PRIVATE_MESSAGE)
+    async def list_codes_command(self, event: AstrMessageEvent):
+        """查看当前代号鸢全局兑换码列表。"""
+        codes = self.store.list_active_codes()
+        if not codes:
+            yield event.plain_result(self._format_message("兑换码列表", ["现在还没有可用的全局兑换码。"]))
+        else:
+            lines = [f"当前共有 {len(codes)} 个全局兑换码："]
+            lines.extend(f"{index}. {code}" for index, code in enumerate(codes, start=1))
+            yield event.plain_result(self._format_message("兑换码列表", lines, bullet=False))
+        event.stop_event()
+
+    @filter.command("清空代号鸢兑换码")
+    @filter.permission_type(filter.PermissionType.ADMIN)
+    @filter.event_message_type(filter.EventMessageType.PRIVATE_MESSAGE)
+    async def clear_codes_command(self, event: AstrMessageEvent):
+        """清空全部代号鸢全局兑换码。"""
+        count = self.store.clear_codes()
+        yield event.plain_result(
+            self._format_message("兑换码管理", [f"已清空全局兑换码，本次共删除 {count} 条记录。"])
+        )
+        event.stop_event()
 
     async def terminate(self):
         logger.info("代号鸢兑换插件已卸载")
@@ -626,11 +627,24 @@ class YuanRedeemPlugin(Star):
     def _normalized_text(event: AstrMessageEvent) -> str:
         return (getattr(event, "message_str", "") or "").strip()
 
-    @staticmethod
-    def _strip_admin_command_prefix(text: str) -> str:
-        if not text.startswith(ADMIN_COMMAND_PREFIX):
+    def _extract_command_payload(self, event: AstrMessageEvent, command_names: set[str]) -> str:
+        text = self._normalized_text(event)
+        if not text:
             return ""
-        return text[len(ADMIN_COMMAND_PREFIX) :].strip()
+
+        parts = text.split(maxsplit=1)
+        first_token = parts[0]
+        payload = parts[1] if len(parts) > 1 else ""
+
+        for command_name in command_names:
+            if first_token == command_name:
+                return payload
+            if first_token.endswith(command_name):
+                prefix = first_token[: -len(command_name)]
+                if prefix and all(not ch.isalnum() for ch in prefix):
+                    return payload
+
+        return self._split_command_payload(text)
 
     @staticmethod
     def _split_command_payload(text: str) -> str:
